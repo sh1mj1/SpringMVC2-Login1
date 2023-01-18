@@ -89,3 +89,315 @@ package 구조
 이것을 web 은 domain 을 의존하지만, domain 은 web 을 의존하지 않는다고 표현한다. 
 
 예를 들어 web 패키지를 모두 삭제해도 domain 에는 전혀 영향이 없도록 의존관계를 설계하는 것이 중요하다. 반대로 이야기하면 domain 은 web 을 참조하면 안된다.
+
+
+# 2. 홈 화면
+
+먼저 홈 화면을 타임리프로 만들어 봅시다. 
+
+`HomeController` - `home()` 수정
+
+```java
+package hello.login.web;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.GetMapping;
+
+@Slf4j
+@Controller
+public class HomeController {
+
+    @GetMapping("/")
+    public String home() {
+        return "home";
+    }
+}
+```
+
+`templates/home.html` 추가
+
+```html
+<!DOCTYPE HTML>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <link th:href="@{/css/bootstrap.min.css}"
+          href="css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<div class="container" style="max-width: 600px">
+    <div class="py-5 text-center">
+        <h2>홈 화면</h2>
+    </div>
+    <div class="row">
+        <div class="col">
+            <button class="w-100 btn btn-secondary btn-lg" type="button"
+                    th:onclick="|location.href='@{/members/add}'|">
+                회원 가입
+            </button>
+        </div>
+        <div class="col">
+            <button class="w-100 btn btn-dark btn-lg"
+                    onclick="location.href='items.html'"
+                    th:onclick="|location.href='@{/login}'|" type="button">
+                로그인
+            </button>
+        </div>
+    </div>
+    <hr class="my-4">
+</div> <!-- /container -->
+</body>
+</html>
+```
+
+실행결과를 확인해 보면 아래와 같습니다.
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/83b46386-4941-419e-843a-e78300600cd8/Untitled.png)
+
+아직 회원 가입 버튼이나 로그인 버튼을 눌렀을 때의 화면은 구성되지 않았습니다.
+
+하나씩 차례대로 만들어 봅시다.
+
+# 3. 회원 가입
+
+`Member`
+
+```java
+package hello.login.web.member;
+
+import lombok.Data;
+
+import javax.validation.constraints.NotEmpty;
+
+@Data
+public class Member {
+
+    private Long id;
+
+    @NotEmpty
+    private String loginId; // 로그인 ID
+
+    @NotEmpty
+    private String name; // 사용자 이름
+
+    @NotEmpty
+    private String password; 
+
+}
+```
+
+`MemberRepository`
+
+```java
+package hello.login.web.member;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Repository;
+
+import javax.swing.text.html.Option;
+import java.util.*;
+
+@Slf4j
+@Repository
+public class MemberRepository {
+
+    private static Map<Long, Member> store = new HashMap<>();
+    private static long sequence = 0L;
+
+    public Member save(Member member) {
+        member.setId(++sequence);
+        log.info("save: member={}", member);
+        store.put(member.getId(), member);
+        return member;
+    }
+
+    public Member findById(Long id) {
+        return store.get(id);
+    }
+
+    public Optional<Member> findByLoginId(String loginId) {
+        return findAll().stream()
+                .filter(m -> m.getLoginId().equals(loginId))
+                .findFirst();
+    }
+
+    private List<Member> findAll() {
+        return new ArrayList<>(store.values());
+    }
+
+    public void clearStore() {
+        store.clear();
+    }
+
+}
+```
+
+`MemberController`
+
+```java
+package hello.login.web.member;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Controller;
+import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+
+import javax.validation.Valid;
+
+@Controller
+@RequiredArgsConstructor
+@RequestMapping("/members")
+public class MemberController {
+
+    private final MemberRepository memberRepository;
+
+    @GetMapping("/add")
+    public String addForm(@ModelAttribute("member") Member member) {
+        return "members/addMemberForm";
+    }
+
+    @PostMapping("/add")
+    public String save(@Valid @ModelAttribute Member member, BindingResult result) {
+        if (result.hasErrors()) {
+            return "members/addMemberForm";
+        }
+        memberRepository.save(member);
+        return "redirect:/";
+
+    }
+
+}
+```
+
+`templates/members/addMemberForm.html` - 회원 가입 뷰 템플릿
+
+```html
+<!DOCTYPE HTML>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <link th:href="@{/css/bootstrap.min.css}"
+          href="../css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .container {
+            max-width: 560px;
+        }
+
+        .field-error {
+            border-color: #dc3545;
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="py-5 text-center">
+        <h2>회원 가입</h2>
+    </div>
+    <h4 class="mb-3">회원 정보 입력</h4>
+    <form action="" th:action th:object="${member}" method="post">
+        <div th:if="${#fields.hasGlobalErrors()}">
+            <p class="field-error" th:each="err : ${#fields.globalErrors()}"
+               th:text="${err}">전체 오류 메시지</p>
+        </div>
+        <div>
+            <label for="loginId">로그인 ID</label>
+            <input type="text" id="loginId" th:field="*{loginId}" class="formcontrol"
+                   th:errorclass="field-error">
+            <div class="field-error" th:errors="*{loginId}"/>
+        </div>
+        <div>
+            <label for="password">비밀번호</label>
+            <input type="password" id="password" th:field="*{password}"
+                   class="form-control"
+                   th:errorclass="field-error">
+            <div class="field-error" th:errors="*{password}"/>
+        </div>
+        <div>
+            <label for="name">이름</label>
+            <input type="text" id="name" th:field="*{name}" class="formcontrol"
+                   th:errorclass="field-error">
+            <div class="field-error" th:errors="*{name}"/>
+        </div>
+        <hr class="my-4">
+        <div class="row">
+            <div class="col">
+                <button class="w-100 btn btn-primary btn-lg" type="submit">회원
+                    가입
+                </button>
+            </div>
+            <div class="col">
+                <button class="w-100 btn btn-secondary btn-lg"
+                        onclick="location.href='items.html'"
+                        th:onclick="|location.href='@{/}'|"
+                        type="button">취소
+                </button>
+            </div>
+        </div>
+    </form>
+</div> <!-- /container -->
+</body>
+</html>
+```
+
+[http://localhost:8080/members/add](http://localhost:8080/members/add) 실행 결과
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/b9c1005d-8f15-41a0-beb9-7cdf960f13b1/Untitled.png)
+
+### 회원용 테스트 데이터 추가
+
+편의상 테스트용 회원 데이터를 추가하자.
+
+`loginId` : `test`
+
+`password` : `test!`
+
+`name` : `테스터`
+
+`TestDataInit`
+
+```java
+package hello.login;
+
+import hello.login.domain.item.Item;
+import hello.login.domain.item.ItemRepository;
+import hello.login.web.member.Member;
+import hello.login.web.member.MemberRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+
+import javax.annotation.PostConstruct;
+
+@Component
+@RequiredArgsConstructor
+public class TestDataInit {
+
+    private final ItemRepository itemRepository;
+    private final MemberRepository memberRepository;
+
+    /**
+     * 테스트용 데이터 추가
+     */
+    @PostConstruct
+    public void init() {
+        itemRepository.save(new Item("itemA", 10000, 10));
+        itemRepository.save(new Item("itemB", 20000, 20));
+
+        Member member = new Member();
+        member.setLoginId("test");
+        member.setPassword("test!");
+        member.setName("테스터");
+        memberRepository.save(member);
+        
+    }
+
+}
+```
+
+추후에 테스트할 것들을 위해 미리 추가해 놓은 것 뿐입니다. 
+
+즉, 아직은 같은 정보로 회원가입을 진행하더라도 중복 관련 예외처리를 하지 않았기 때문에 회원가입이 됩니다.
