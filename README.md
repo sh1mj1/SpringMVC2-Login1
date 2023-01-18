@@ -599,3 +599,228 @@ public class LoginController {
 그런데 아직 로그인이 되면 홈 화면에 고객 이름이 보여야 한다는 요구사항을 만족하지 못한다. 로그인의 상태를 유지하면서, 로그인에 성공한 사용자는 홈 화면에 접근시 고객의 이름을 보여주려면 어떻게 해야할까?
 
 
+
+# 5. 로그인 처리하기 - 쿠키 사용
+
+참고
+
+여기서는 여러분이 쿠키의 기본 개념을 이해하고 있다고 가정한다. 쿠키에 대해서는 이전 글 “HTTP 웹 강의”를 참고 하면 좋습니다. 혹시 잘 생각이 안나면 쿠키 관련 내용을 다시 익히고 공부하는 것이 좋습니다.
+
+그렇다면 쿠키를 사용해서 로그인, 로그아웃 기능을 구현해봅시다.
+
+**로그인 상태 유지하기**
+
+로그인의 상태를 어떻게 유지할 수 있을까?
+
+로그인 정보를 쿼리 파라미터로 계속 유지하면서 보내는 것은 매우 어렵고 번거로운 작업입니다. 
+
+쿠키를 사용해보자.
+
+### 쿠키
+
+서버에서 로그인에 성공하면 HTTP 응답에 쿠키를 담아서 브라우저에 전달하자. 그러면 브라우저는 앞으로 해당 쿠키를 지속해서 보내준다
+
+**쿠키 생성**
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/93f05ad5-b60d-4acb-bd73-ae20c76f8557/Untitled.png)
+
+**클라이언트 쿠키 전달1**
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/82a73379-c219-472b-a4d2-3e462f806b79/Untitled.png)
+
+**클라이언트 쿠키 전달2**
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/58bab3d6-5000-4ed3-903a-a9805a54cd57/Untitled.png)
+
+### 쿠키에는 영속 쿠키와 세션 쿠키가 있다.
+
+- **영속 쿠키**: 만료 날짜를 입력하면 해당 날짜까지 유지
+- **세션 쿠키**: 만료 날짜를 생략하면 브라우저 종료시 까지만 유지
+
+**브라우저 종료시 로그아웃이 되길 기대하므로, 우리에게 필요한 것은 세션 쿠키이다.**
+
+`LoginController` - `login()` 메서드 - 로그인 성공시 세션 쿠키를 생성하자.
+
+```java
+@PostMapping("/login")
+    public String login(@Valid @ModelAttribute LoginForm form, BindingResult bindingResult, HttpServletResponse response) {
+
+        if (bindingResult.hasErrors()) {
+            return "login/loginForm";
+        }
+
+        Member loginMember = loginService.login(form.getLoginId(), form.getPassword());
+
+        log.info("login? {}", loginMember);
+
+        if (loginMember == null) {
+            bindingResult.reject("loginFail", "아이디 또는 비밀번호가 맞지 않습니다.");
+            return "login/loginForm";
+        }
+
+        // 로그인 성공 처리해야 함. TODO
+
+				// 쿠키 생성 로직 - 쿠키에 시간 정보를 주지 않으면 세션 쿠키 (브라우저 종료 시 모든 쿠키 종료)
+        Cookie idCookie = new Cookie("memberId", String.valueOf(loginMember.getId()));
+        response.addCookie(idCookie);
+
+        return "redirect:/";
+
+    }
+```
+
+여기서 쿠키 생성 로직에 주목해봅시다.
+
+로그인에 성공하면 쿠키를 생성하고 `HttpServletResponse` 에 담는다. 쿠키 이름은 `memberId` 이고, 값은 회원의 `id` 을 담아둡니다. 웹 브라우저는 종료 전까지 회윈의 id 을 서버에 계속 보내줄 것입니다.
+
+실행을 하면 크롬 브라우저를 통해 HTTP 응답 헤더에 쿠키가 추가된 것을 확인할 수 있습니다.
+
+우리가 이전에 `TestDataInit` 클래스에서 테스터 아이디로 넣어준 아이디 test , 비밀번호 test! 로 로그인 했을 때의 결과입니다.
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/7dcbf7e9-ae6c-4a1d-ab73-ae961aed0b8f/Untitled.png)
+
+이제 요구사항에 맞추어 로그인에 성공하면 로그인 한 사용자 전용 홈 화면을 보여주자.
+
+`HomeController` - 홈 → 로그인 처리
+
+기존 home() 에 있는 @GetMapping("/") 은 주석 처리하자.
+@CookieValue 를 사용하면 편리하게 쿠키를 조회할 수 있다.
+로그인 하지 않은 사용자도 홈에 접근할 수 있기 때문에 required = false 를 사용한다
+
+```java
+package hello.login.web;
+
+import hello.login.web.member.Member;
+import hello.login.web.member.MemberRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.CookieValue;
+import org.springframework.web.bind.annotation.GetMapping;
+
+@Slf4j
+@Controller
+@RequiredArgsConstructor
+public class HomeController {
+
+    private final MemberRepository memberRepository;
+
+    @GetMapping("/")
+    public String home() {
+        return "home";
+    }
+
+    @GetMapping("/")
+    public String homeLogin(
+            @CookieValue(name = "memberId", required = false) Long memberId, Model model
+    ) {
+        if (memberId == null) {
+            return "home";
+        }
+
+        // 로그인
+        Member loginMember = memberRepository.findById(memberId);
+        if (loginMember == null) {
+            return "home";
+        }
+
+        model.addAttribute("member", loginMember);
+        return "loginHome";
+    }
+}
+```
+
+기존 `home()` 에 있는 `@GetMapping("/")` 은 주석 처리하자.
+
+`@CookieValue` 를 사용하면 편리하게 쿠키를 조회할 수 있다.
+
+로그인 하지 않은 사용자도 홈에 접근할 수 있기 때문에 `required = false` 를 사용한다
+
+### 로직 분석
+
+로그인 쿠키( `memberId` )가 없는 사용자는 기존 `home` 으로 보낸다. 추가로 로그인 쿠키가 있어도 회원이 없으면 `home` 으로 보낸다.
+
+로그인 쿠키( `memberId` )가 있는 사용자는 로그인 사용자 전용 홈 화면인 `loginHome` 으로 보낸다. 추가로 홈 화면에 화원 관련 정보도 출력해야 해서 `member` 데이터도 모델에 담아서 전달한다.
+
+`templates/loginHome.html`  홈 - 로그인 사용자 전용
+
+```html
+<!DOCTYPE HTML>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <link th:href="@{/css/bootstrap.min.css}"
+          href="../css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<div class="container" style="max-width: 600px">
+    <div class="py-5 text-center">
+        <h2>홈 화면</h2>
+    </div>
+    <h4 class="mb-3" th:text="|로그인: ${member.name}|">로그인 사용자 이름</h4>
+    <hr class="my-4">
+    <div class="row">
+        <div class="col">
+            <button class="w-100 btn btn-secondary btn-lg" type="button"
+                    th:onclick="|location.href='@{/items}'|">
+                상품 관리
+            </button>
+        </div>
+        <p></p>
+        <div class="col">
+            <form th:action="@{/logout}" method="post">
+                <button class="w-100 btn btn-dark btn-lg" type="submit">
+                    로그아웃
+                </button>
+            </form>
+        </div>
+
+    </div>
+    <hr class="my-4">
+</div> <!-- /container -->
+</body>
+</html>
+```
+
+`th:text="|로그인: ${member.name}|"` : 로그인에 성공한 사용자 이름을 출력한다.
+
+상품 관리, 로그아웃 버튼을 노출한다.
+
+**실행**
+
+로그인에 성공하면 사용자 이름이 출력되면서 상품 관리, 로그아웃 버튼을 확인할 수 있다. 
+
+로그인에 성공시 세션 쿠키가 지속해서 유지되고, 웹 브라우저에서 서버에 요청시 `memberId` 쿠키를 계속 보내준다
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/0d56b1ef-134a-4f8f-b019-6e656833afc1/Untitled.png)
+
+### 로그아웃 기능
+
+이번에는 로그아웃 기능을 만들어보자. 로그아웃 방법은 다음과 같다.
+
+- 세션 쿠키이므로 웹 브라우저 종료시
+- 서버에서 해당 쿠키의 종료 날짜를 0으로 지정
+
+`LoginController` - `logout` 기능 추가
+
+```java
+@PostMapping("/logout")
+public String logout(HttpServletResponse response) {
+    expireCookie(response, "memberId");
+    return "redirect:/";
+}
+
+private void expireCookie(HttpServletResponse response, String cookieName) {
+    Cookie cookie = new Cookie(cookieName, null);
+    cookie.setMaxAge(0);
+
+    response.addCookie(cookie);
+}
+```
+
+**실행** 
+
+로그아웃도 응답 쿠키를 생성하는데 `Max-Age=0` 를 확인할 수 있다. 해당 쿠키는 즉시 종료된다.
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/aa7d893b-3137-4755-b68c-38e6309f3366/Untitled.png)
