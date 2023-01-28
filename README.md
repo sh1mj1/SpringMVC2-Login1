@@ -807,11 +807,13 @@ public class HomeController {
 ```java
 @PostMapping("/logout")
 public String logout(HttpServletResponse response) {
+    
     expireCookie(response, "memberId");
     return "redirect:/";
 }
 
 private void expireCookie(HttpServletResponse response, String cookieName) {
+
     Cookie cookie = new Cookie(cookieName, null);
     cookie.setMaxAge(0);
 
@@ -824,3 +826,237 @@ private void expireCookie(HttpServletResponse response, String cookieName) {
 로그아웃도 응답 쿠키를 생성하는데 `Max-Age=0` 를 확인할 수 있다. 해당 쿠키는 즉시 종료된다.
 
 ![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/aa7d893b-3137-4755-b68c-38e6309f3366/Untitled.png)
+
+
+# 6. 쿠키와 보안 문제
+
+이전 글에서 쿠키를 사용해서 로그인Id 를 전달해서 로그인을 유지할 수 있었습니다. 
+
+**그런데 여기에는 심각한 보안 문제가 있습니다!!**
+
+### 보안 문제
+
+**쿠키 값은 임의로 변경할 수 있다.**
+
+클라이언트가 쿠키를 강제로 변경하면 다른 사용자가 된다.
+
+실제 웹브라우저 개발자모드 →  `Application` -> `Cookie` 변경으로 확인
+
+`Cookie: memberId=1` → `Cookie: memberId=2` (다른 사용자의 이름이 보임)
+
+**쿠키에 보관된 정보는 훔쳐갈 수 있다.**
+
+만약 쿠키에 개인정보나, 신용카드 정보가 있다면?
+
+이 정보가 웹 브라우저에도 보관되고, 네트워크 요청마다 계속 클라이언트에서 서버로 전달된다.
+
+쿠키의 정보가 나의 로컬 PC에서 털릴 수도 있고, 네트워크 전송 구간에서 털릴 수도 있다.
+
+**해커가 쿠키를 한번 훔쳐가면 평생 사용할 수 있다.**
+
+해커가 쿠키를 훔쳐가서 그 쿠키로 악의적인 요청을 계속 시도할 수 있다.
+
+### 대안
+
+쿠키에 중요한 값을 노출하지 않고, 사용자 별로 예측 불가능한 임의의 토큰(랜덤 값)을 노출하고, 서버에서 토큰과 사용자 id를 매핑해서 인식한다. 그리고 서버에서 토큰을 관리한다.
+
+토큰은 해커가 임의의 값을 넣어도 찾을 수 없도록 예상 불가능 해야 한다.
+
+해커가 토큰을 털어가도 시간이 지나면 사용할 수 없도록 서버에서 해당 토큰의 만료시간을 짧게(예: 30분) 유지한다. 또는 해킹이 의심되는 경우 서버에서 해당 토큰을 강제로 제거하면 된다.
+
+# 7. 로그인 처리하기 - 세션 동작방식
+
+### 목표
+
+**앞서 쿠키에 중요한 정보를 보관하는 방법은 여러가지 보안 이슈가 있었다.** 
+
+이 문제를 해결하려면 결국 중요한 정보를 모두 서버에 저장해야 한다. 그리고 클라이언트와 서버는 추정 불가능한 임의의 식별자 값으로 연결해야 한다.
+
+이렇게 **서버에 중요한 정보를 보관하고 연결을 유지하는 방법을 세션**이라 한다.
+
+### 세션 동작 방식
+
+세션을 어떻게 개발할지 먼저 개념을 이해해보자
+
+**로그인**
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/da6977c5-9814-470f-8547-9c6dcbc126d3/Untitled.png)
+
+사용자가 `loginId` , `password` 정보를 전달하면 서버에서 해당 사용자가 맞는지 확인한다
+
+**세션 생성**
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/adb9ebad-3625-4184-b8b1-ce12533eee36/Untitled.png)
+
+세션 ID를 생성하는데, 추정 불가능해야 한다.
+
+**UUID는 추정이 불가능하다.** 아래 긴 값이 UUID 이다.
+
+`Cookie: mySessionId=zz0101xx-bab9-4b92-9b32-dadb280f4b61`
+
+생성된 세션 ID 와 세션에 보관할 값( `memberA` )을 서버의 세션 저장소에 보관한다.
+
+**세션id를 응답 쿠키로 전달**
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/484bca49-a760-4822-a768-51fba86f73e6/Untitled.png)
+
+**클라이언트와 서버는 결국 쿠키로 연결이 되어야 한다.**
+
+서버는 클라이언트에 `mySessionId` 라는 이름으로 세션ID 만 쿠키에 담아서 전달한다.
+
+클라이언트는 쿠키 저장소에 `mySessionId` 쿠키를 보관한다.
+
+### 중요
+
+여기서 중요한 포인트는 **회원과 관련된 정보는 전혀 클라이언트에 전달하지 않는다는 것**이다.
+
+**오직 추정 불가능한 세션 ID** 만 쿠키를 통해 클라이언트에 전달한다
+
+**클라이언트의 세션id 쿠키 전달**
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/e40b8e5c-e6ee-44c8-82fd-29cb972b110c/Untitled.png)
+
+클라이언트는 요청시 항상 `mySessionId` 쿠키를 전달한다.
+
+서버에서는 클라이언트가 전달한 `mySessionId` 쿠키 정보로 세션 저장소를 조회해서 로그인시 보관한 세션 정보를 사용한다.
+
+### 정리
+
+세션을 사용해서 서버에서 중요한 정보를 관리하게 되었다. 덕분에 아래와 같은 보안 문제들을 해결할 수 있다.
+
+- 쿠키 값을 변조 가능한 문제
+    - 예상 불가능한 복잡한 세션Id를 사용해서 해결!
+- 쿠키에 보관하는 정보는 클라이언트 해킹시 털릴 가능성이 있는 문제
+    - 세션Id가 털려도 여기에는 중요한 정보가 없다.
+- 쿠키 탈취 후 사용할 수 있는 문제
+    - 해커가 토큰을 털어가도 시간이 지나면 사용할 수 없도록 서버에서 세션의 만료시간을 짧게(예: 30분) 유지한다.
+    - 또는 해킹이 의심되는 경우 서버에서 해당 세션을 강제로 제거하면 된다.
+
+그렇다면 세션을 직접 개발해서 적용해봅시다.
+
+
+# 8. 로그인 처리하기 - 세션 직접 만들기
+
+세션을 직접 개발해서 적용해보자.
+
+**세션 관리는 크게 다음 3가지 기능을 제공하면 된다.**
+
+- **세션 생성**
+    - sessionId 생성 (임의의 추정 불가능한 랜덤 값)
+    - 세션 저장소에 sessionId 와 보관할 값 저장
+    - sessionId 로 응답 쿠키를 생성해서 클라이언트에 전달
+- **세션 조회**
+    - 클라이언트가 요청한 sessionId 쿠키의 값으로, 세션 저장소에 보관한 값 조회
+- **세션 만료**
+    - 클라이언트가 요청한 sessionId 쿠키의 값으로 세션 저장소에 보관한 sessionId 와 값 제거
+
+`SessionManager` - 세션 관리
+
+```java
+package hello.login.web.session;
+
+import org.springframework.stereotype.Component;
+
+import javax.servlet.http.Cookie;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
+@Component
+public class SessionManager {
+
+    public static final String SESSION_COOKIE_NAME = "mySessionId";
+
+    private Map<String, Object> sessionStore = new ConcurrentHashMap<>();
+
+    // 세션 생성
+    public void createSession(Object value, HttpServletResponse response) {
+
+        // 세션 id 을 생성하고, 값을 세션에 저장
+        String sessionId = UUID.randomUUID().toString();
+        sessionStore.put(sessionId, value);
+
+        // 쿠키 생성
+        Cookie mySessionCookie = new Cookie(SESSION_COOKIE_NAME, sessionId);
+        response.addCookie(mySessionCookie);
+
+    }
+
+    // 세션 조회
+    public Object getSession(HttpServletRequest request) {
+        Cookie sessionCookie = findCookie(request, SESSION_COOKIE_NAME);
+        if (sessionCookie == null) {
+            return null;
+        }
+        return sessionStore.get(sessionCookie.getValue());
+    }
+
+    // 세션 만료
+    public void expire(HttpServletRequest request) {
+        Cookie sessionCookie = findCookie(request, SESSION_COOKIE_NAME);
+        if (sessionCookie != null) {
+            sessionStore.remove(sessionCookie.getValue());
+        }
+    }
+
+    private Cookie findCookie(HttpServletRequest request, String cookieName) {
+        if (request.getCookies() == null) {
+            return null;
+        }
+        return Arrays.stream(request.getCookies())
+                .filter(cookie -> cookie.getName().equals(cookieName))
+                .findAny()
+                .orElse(null);
+    }
+
+}
+```
+
+로직은 어렵지 않아서 쉽게 이해가 될 것이다.
+
+`@Component` : 스프링 빈으로 자동 등록한다.
+
+`ConcurrentHashMap` : `HashMap` 은 동시 요청에 안전하지 않다. 동시 요청에 안전한 `ConcurrentHashMap` 를 사용했다.
+
+`SessionManagerTest` - 테스트
+
+```java
+package hello.login.session;
+
+import static org.assertj.core.api.Assertions.*;
+
+class SessionManagerTest {
+
+    SessionManager sessionManager = new SessionManager();
+
+    @Test
+    void sessionTest(){
+
+        // 세션 생성
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        Member member = new Member();
+        sessionManager.createSession(member, response);
+
+        // 요청에 응답 쿠키 저장
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setCookies(response.getCookies());
+
+        // 세션 조회
+        Object result = sessionManager.getSession(request);
+        assertThat(result).isEqualTo(member);
+
+        // 세션 만료
+        sessionManager.expire(request);
+        Object expired = sessionManager.getSession(request);
+        assertThat(expired).isNull();
+
+    }
+}
+```
+
+여기서는 `HttpServletRequest`, `HttpServletResponse` 객체를 직접 사용할 수 없기 때문에 테스트에서 비슷한 역할을 해주는 가짜 `MockHttpServletRequest`, `MockHttpServletResponse` 을 사용했다.
+
+
