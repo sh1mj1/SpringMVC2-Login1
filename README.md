@@ -1285,3 +1285,77 @@ public String homeLoginV3(HttpServletRequest request, Model model) {
 ![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/db7038dd-fde3-4f0a-9b2b-20f70d3548ed/Untitled.png)
 
 JSESSIONID 쿠키가 적절하게 생성되는 것을 확인할 수 있습니다.
+
+# 11. 로그인 처리하기 -  서블릿 HTTP 세션2
+
+### **@SessionAttribute**
+
+스프링은 세션을 더 편리하게 사용할 수 있도록 `@SessionAttribute` 을 지원합니다.
+
+이미 로그인 된 사용자를 찾을 때는 아래처럼 사용하면 됩니다. (참고로 이 기능은 세션을 생성하지는 않습니다.)
+
+```java
+@SessionAttribute(name="loginMember", required=false) Member loginMember
+```
+
+**`HomeController` - `homeLoginV3Spring()`**
+
+```java
+@GetMapping("/")
+public String homeLoginV3Spring(
+        @SessionAttribute(name = SessionConst.LOGIN_MEMBER, 
+                required = false) Member loginMember,
+        Model model
+) {
+    // 세션에 회원 데이터가 없으면 home 으로
+    if (loginMember == null) {
+        return "home";
+    }
+
+    // 세션이 유지되면 로그인으로 이동
+    model.addAttribute("member", loginMember);
+    return "loginHome";
+}
+```
+
+이렇게 간단한 코드로 세션을 찾고, 세션에 들어있는 데이터를 찾는 번거로운 과정을 스프링이 한번에 편리하게 처리해주는 것을 확인할 수 있습니다.
+
+required 의 기본값은 true → session 이 없거나 session 의 속성이 없으면 예외가 던져짐.
+
+예외로 던지지 않고 없을 때는 null 로 처리하고 싶으면 false 로 해야 함.
+
+### **TrackingModes**
+
+로그인을 처음 시도하면 URL이 다음과 같이 `jsessionid` 를 포함하고 있는 것을 확인할 수 있습니다.
+
+크롬으로 로그인을 시도했었다면 종료한 후에 다시 실행하여 로그인 해 봅시다.  
+
+저는 사파리를 사용했습니다.
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/eeadf2b8-70be-48da-9533-1037b9c76c91/Untitled.png)
+
+```java
+http://localhost:8080/;jsessionid=C5FEE3BA9DA52A3BF62D47019DCE1905
+```
+
+이것은 웹 브라우저가 쿠키를 지원하지 않을 때 쿠키 대신 URL을 통해서 세션을 유지하는 방법입니다.
+
+이 방법을 사용하려면 URL에 이 값을 계속 포함해서 전달해야 합니다.
+
+타임리프 같은 템플릿은 엔진을 통해서 링크를 걸면 `jsessionid` 를 URL에 자동으로 포함해줍니다.
+
+서버 입장에서 웹 브라우저가 쿠키를 지원하는지 하지 않는지 최초에는 판단하지 못하므로, 쿠키 값도 전달하고, URL에 `jsessionid` 도 함께 전달합니다.
+
+URL 전달 방식을 끄고 항상 쿠키를 통해서만 세션을 유지하고 싶으면 다음 옵션을 넣어주면 됩니다.
+
+`application.properties`
+
+```java
+server.servlet.session.tracking-modes=cookie
+```
+
+이렇게 하면 URL에 `jsessionid` 가 노출되지 않지요!
+
+변경한 것으로 서버를 다시 실행시킨 후 사파리를 껐다가 다시 로그인을 해보면 초기 URL 에도 `jsessionid` 가 포함되지 않는 것을 볼 수 있습니다.
+
+![Untitled](https://s3-us-west-2.amazonaws.com/secure.notion-static.com/dfe32e52-68fb-4f7c-b56e-3f47da12bc23/Untitled.png)
