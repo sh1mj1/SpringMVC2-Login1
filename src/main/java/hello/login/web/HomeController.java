@@ -1,5 +1,6 @@
 package hello.login.web;
 
+import hello.login.web.argumentresolver.Login;
 import hello.login.web.member.Member;
 import hello.login.web.member.MemberRepository;
 import hello.login.web.session.SessionManager;
@@ -45,7 +46,7 @@ public class HomeController {
         return "loginHome";
     }
 
-//    @GetMapping("/")
+    //    @GetMapping("/")
     public String homeLoginV2(HttpServletRequest request, Model model) {
 
         // 세션 관리자에 저장된 회원 정보 조회
@@ -58,7 +59,7 @@ public class HomeController {
         return "loginHome";
     }
 
-//    @GetMapping("/")
+    //    @GetMapping("/")
     public String homeLoginV3(HttpServletRequest request, Model model) {
 
         // 세션이 없으면 home
@@ -80,7 +81,7 @@ public class HomeController {
 
     }
 
-    @GetMapping("/")
+    //    @GetMapping("/")
     public String homeLoginV3Spring(
             @SessionAttribute(name = SessionConst.LOGIN_MEMBER,
                     required = false) Member loginMember,
@@ -96,4 +97,17 @@ public class HomeController {
         return "loginHome";
     }
 
+    @GetMapping("/")
+    public String homeLoginV3ArgumentResolver(@Login Member loginMember, Model model) {
+
+        // 세션에 회원 데이터가 없으면 home
+        if (loginMember == null) {
+            return "home";
+        }
+
+        // 세션이 유지되면 로그인으로 이동
+        model.addAttribute("member", loginMember);
+        return "loginHome";
+
+    }
 }
